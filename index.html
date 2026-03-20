@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>SENTINEL — Fraud Intelligence Platform</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=DM+Mono:wght@300;400;500&display=swap');
+
+:root {
+  --bg:      #03050a;
+  --bg1:     #070c14;
+  --bg2:     #0b1220;
+  --bg3:     #0f1830;
+  --border:  #142038;
+  --t0:      #c8d8f0;
+  --t1:      #5a7a9a;
+  --t2:      #2a4060;
+  --acid:    #00ffcc;
+  --danger:  #ff2255;
+  --warn:    #ffaa00;
+  --info:    #0088ff;
+  --purple:  #cc44ff;
+  --orb:     'Orbitron', monospace;
+  --mono:    'DM Mono', monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--t0);
+  font-family: var(--mono);
+  font-size: 12px;
+  min-height: 100vh;
+  overflow-x: hidden;
+  cursor: crosshair;
+}
+
+/* ── Animated background ── */
+.bg-grid {
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image:
+    linear-gradient(rgba(0,255,204,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,255,204,0.025) 1px, transparent 1px);
+  background-size: 32px 32px;
+  animation: gridPulse 8s ease-in-out infinite;
+}
+@keyframes gridPulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+.bg-glow {
+  position: fixed; pointer-events: none; z-index: 0;
+  width: 600px; height: 600px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(0,255,204,0.04) 0%, transparent 70%);
+  top: -200px; left: -200px;
+  animation: glowMove 15s ease-in-out infinite;
+}
+@keyframes glowMove {
+  0%{transform:translate(0,0)}
+  33%{transform:translate(800px,200px)}
+  66%{transform:translate(400px,600px)}
+  100%{transform:translate(0,0)}
+}
+
+/* ── Header ── */
+header {
+  position: sticky; top: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 28px; height: 56px;
+  background: rgba(3,5,10,0.92);
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(12px);
+}
+.logo {
+  font-family: var(--orb); font-size: 18px; font-weight: 900;
+  letter-spacing: 0.2em; color: var(--acid);
+  text-shadow: 0 0 20px rgba(0,255,204,0.5);
+  position: relative;
+}
+.logo::after {
+  content: 'FRAUD INTELLIGENCE PLATFORM';
+  position: absolute; left: 0; top: 100%;
+  font-size: 7px; letter-spacing: 0.3em; color: var(--t2);
+  white-space: nowrap; margin-top: 2px;
+}
+.header-center {
+  display: flex; gap: 24px; align-items: center;
+}
+.threat-level {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--orb); font-size: 10px; letter-spacing: 0.1em;
+}
+.threat-bar {
+  display: flex; gap: 3px;
+}
+.threat-seg {
+  width: 18px; height: 14px; border-radius: 2px;
+  background: var(--bg3); border: 1px solid var(--border);
+  transition: all 0.3s;
+}
+.threat-seg.active-low    { background: var(--acid); box-shadow: 0 0 6px var(--acid); }
+.threat-seg.active-medium { background: var(--warn); box-shadow: 0 0 6px var(--warn); }
+.threat-seg.active-high   { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
+.header-right { display: flex; gap: 10px; align-items: center; }
+.hchip {
+  padding: 4px 10px; border-radius: 3px;
+  border: 1px solid var(--border);
+  font-size: 9px; letter-spacing: 0.1em; color: var(--t1);
+  background: var(--bg2);
+  font-family: var(--orb);
+}
+.hchip.live { border-color: var(--acid); color: var(--acid); }
+.live-dot {
+  display: inline-block; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--acid); margin-right: 5px;
+  box-shadow: 0 0 6px var(--acid);
+  animation: blink 1.5s infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+#sys-time { font-family: var(--orb); font-size: 11px; color: var(--t1); letter-spacing: 0.1em; }
+
+/* ── Main layout ── */
+.sentinel-layout {
+  position: relative; z-index: 1;
+  display: grid;
+  grid-template-columns: 260px 1fr 300px;
+  grid-template-rows: auto;
+  min-height: calc(100vh - 56px);
+}
+
+/* ── LEFT PANEL ── */
+.left-panel {
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+}
+.panel-head {
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--orb); font-size: 9px; letter-spacing: 0.2em;
+  color: var(--t2);
+}
+.panel-head span { color: var(--acid); }
+
+/* Transaction form */
+.tx-form { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.field { margin-bottom: 10px; }
+.field-label {
+  font-size: 8px; letter-spacing: 0.15em; color: var(--t2);
+  text-transform: uppercase; margin-bottom: 4px; display: block;
+  font-family: var(--orb);
+}
+.field input, .field select {
+  width: 100%; background: var(--bg2);
+  border: 1px solid var(--border); color: var(--t0);
+  font-family: var(--mono); font-size: 12px;
+  padding: 7px 10px; border-radius: 3px; outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  appearance: none;
+}
+.field input:focus, .field select:focus {
+  border-color: var(--acid);
+  box-shadow: 0 0 0 2px rgba(0,255,204,0.08);
+}
+.field select option { background: var(--bg2); }
+
+/* Risk preview bar */
+.risk-preview {
+  padding: 10px 16px; border-bottom: 1px solid var(--border);
+}
+.rp-label { font-size: 8px; letter-spacing: 0.15em; color: var(--t2); font-family: var(--orb); margin-bottom: 6px; }
+.rp-bar { height: 4px; background: var(--bg3); border-radius: 2px; overflow: hidden; }
+.rp-fill { height: 100%; border-radius: 2px; background: var(--acid); transition: width 0.4s, background 0.4s; }
+
+.submit-btn {
+  margin: 14px 16px 8px;
+  width: calc(100% - 32px);
+  padding: 11px;
+  background: transparent;
+  border: 1px solid var(--acid);
+  color: var(--acid);
+  font-family: var(--orb);
+  font-size: 10px; letter-spacing: 0.15em;
+  cursor: pointer; border-radius: 3px;
+  transition: all 0.2s;
+  position: relative; overflow: hidden;
+}
+.submit-btn::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: var(--acid); opacity: 0;
+  transition: opacity 0.2s;
+}
+.submit-btn:hover { color: var(--bg); }
+.submit-btn:hover::before { opacity: 1; }
+.submit-btn span { position: relative; z-index: 1; }
+.submit-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+.sim-btn {
+  margin: 0 16px 14px;
+  width: calc(100% - 32px);
+  padding: 9px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--t1);
+  font-family: var(--mono); font-size: 11px;
+  cursor: pointer; border-radius: 3px;
+  transition: all 0.2s;
+}
+.sim-btn:hover { border-color: var(--purple); color: var(--purple); }
+
+/* Stats in left panel */
+.left-stats { padding: 14px 16px; flex: 1; }
+.stat-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 0; border-bottom: 1px solid var(--bg3);
+}
+.stat-item:last-child { border-bottom: none; }
+.si-label { font-size: 10px; color: var(--t1); }
+.si-val { font-family: var(--orb); font-size: 14px; font-weight: 700; }
+
+/* ── CENTER PANEL ── */
+.center-panel { display: flex; flex-direction: column; }
+
+/* Map / transaction stream */
+.tx-stream {
+  flex: 1; padding: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.stream-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 14px;
+}
+.stream-title { font-family: var(--orb); font-size: 10px; letter-spacing: 0.15em; color: var(--t1); }
+.stream-controls { display: flex; gap: 8px; }
+.filter-btn {
+  padding: 3px 10px; border-radius: 2px;
+  border: 1px solid var(--border);
+  background: var(--bg2); color: var(--t2);
+  font-size: 9px; cursor: pointer; letter-spacing: 0.08em;
+  transition: all 0.2s; font-family: var(--orb);
+}
+.filter-btn.active { border-color: var(--acid); color: var(--acid); background: rgba(0,255,204,0.06); }
+.filter-btn:hover { border-color: var(--t1); color: var(--t1); }
+
+/* Transaction cards */
+.tx-list { display: flex; flex-direction: column; gap: 6px; max-height: 340px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--bg3) transparent; }
+.tx-card {
+  display: grid; grid-template-columns: 36px 1fr auto auto auto;
+  align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg1);
+  transition: all 0.2s; cursor: pointer;
+  animation: slideIn 0.3s ease;
+}
+@keyframes slideIn { from{opacity:0;transform:translateX(-10px)} to{opacity:1;transform:translateX(0)} }
+.tx-card:hover { border-color: var(--t1); background: var(--bg2); }
+.tx-card.fraud  { border-color: rgba(255,34,85,0.4); background: rgba(255,34,85,0.04); }
+.tx-card.fraud:hover { border-color: var(--danger); }
+.tx-icon {
+  width: 36px; height: 36px; border-radius: 4px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; background: var(--bg3);
+  border: 1px solid var(--border);
+}
+.tx-card.fraud .tx-icon { background: rgba(255,34,85,0.1); border-color: rgba(255,34,85,0.3); }
+.tx-main .tx-id { font-family: var(--orb); font-size: 10px; color: var(--t0); letter-spacing: 0.05em; }
+.tx-main .tx-merchant { font-size: 10px; color: var(--t1); margin-top: 2px; }
+.tx-amount { font-family: var(--orb); font-size: 13px; font-weight: 700; }
+.tx-card.fraud .tx-amount { color: var(--danger); }
+.tx-block { font-size: 9px; color: var(--t2); font-family: var(--orb); }
+.tx-badge {
+  padding: 2px 8px; border-radius: 2px; font-size: 9px;
+  font-family: var(--orb); letter-spacing: 0.05em; font-weight: 700;
+}
+.tx-badge.fraud { background: rgba(255,34,85,0.15); color: var(--danger); border: 1px solid rgba(255,34,85,0.3); }
+.tx-badge.clean { background: rgba(0,255,204,0.08); color: var(--acid); border: 1px solid rgba(0,255,204,0.2); }
+
+/* Charts row */
+.charts-row {
+  display: grid; grid-template-columns: 1fr 1fr 1fr;
+  border-top: 1px solid var(--border);
+}
+.chart-cell { padding: 14px; border-right: 1px solid var(--border); }
+.chart-cell:last-child { border-right: none; }
+.chart-cell-title { font-family: var(--orb); font-size: 8px; letter-spacing: 0.15em; color: var(--t2); margin-bottom: 10px; }
+.chart-wrap { height: 100px; }
+
+/* Alert result */
+.alert-result {
+  margin: 0 16px 14px; padding: 14px; border-radius: 4px;
+  border: 1px solid var(--border); background: var(--bg2);
+  display: none;
+  animation: fadeIn 0.4s ease;
+}
+@keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
+.ar-verdict {
+  font-family: var(--orb); font-size: 16px; font-weight: 900;
+  letter-spacing: 0.1em; margin-bottom: 10px;
+  display: flex; align-items: center; gap: 8px;
+}
+.ar-verdict.fraud { color: var(--danger); }
+.ar-verdict.clean { color: var(--acid); }
+.ar-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.ar-item { padding: 6px 8px; background: var(--bg3); border-radius: 3px; }
+.ar-item .k { font-size: 8px; color: var(--t2); letter-spacing: 0.1em; font-family: var(--orb); }
+.ar-item .v { font-size: 12px; color: var(--t0); margin-top: 2px; }
+.ar-flags { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px; }
+.ar-flag { padding: 2px 8px; border-radius: 2px; font-size: 9px; background: rgba(255,34,85,0.1); color: var(--danger); border: 1px solid rgba(255,34,85,0.25); }
+.conf-bar-wrap { height: 3px; background: var(--bg3); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+.conf-bar { height: 100%; border-radius: 2px; transition: width 0.6s; }
+
+/* ── RIGHT PANEL ── */
+.right-panel {
+  border-left: 1px solid var(--border);
+  display: flex; flex-direction: column;
+}
+
+/* Blockchain ledger */
+.chain-list { flex: 1; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--bg3) transparent; }
+.block-item {
+  padding: 10px 14px; border-bottom: 1px solid var(--border);
+  cursor: pointer; transition: background 0.15s;
+  position: relative;
+}
+.block-item:hover { background: var(--bg2); }
+.block-item.fraud-block { border-left: 2px solid var(--danger); }
+.block-item.clean-block { border-left: 2px solid rgba(0,255,204,0.3); }
+.block-item.genesis-block { border-left: 2px solid var(--info); }
+.bi-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.bi-idx { font-family: var(--orb); font-size: 11px; font-weight: 700; color: var(--info); }
+.bi-badge { font-size: 8px; font-family: var(--orb); padding: 1px 6px; border-radius: 2px; }
+.bi-badge.fraud { background: rgba(255,34,85,0.15); color: var(--danger); }
+.bi-badge.clean { background: rgba(0,255,204,0.08); color: var(--acid); }
+.bi-badge.genesis { background: rgba(0,136,255,0.1); color: var(--info); }
+.bi-hash { font-size: 8px; color: var(--t2); font-family: var(--mono); margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bi-detail { font-size: 10px; color: var(--t1); }
+.bi-amount { color: var(--t0); font-weight: 500; }
+.bi-nonce { font-size: 8px; color: var(--t2); margin-top: 2px; }
+
+/* Chain validator */
+.chain-validator {
+  padding: 12px 14px; border-top: 1px solid var(--border);
+}
+.validate-btn {
+  width: 100%; padding: 8px;
+  background: transparent; border: 1px solid var(--acid);
+  color: var(--acid); font-family: var(--orb); font-size: 9px;
+  letter-spacing: 0.15em; cursor: pointer; border-radius: 3px;
+  transition: all 0.2s;
+}
+.validate-btn:hover { background: rgba(0,255,204,0.08); }
+.validate-result {
+  margin-top: 8px; padding: 8px 10px; border-radius: 3px;
+  font-size: 10px; display: none;
+}
+.validate-result.valid { background: rgba(0,255,204,0.06); color: var(--acid); border: 1px solid rgba(0,255,204,0.2); }
+.validate-result.invalid { background: rgba(255,34,85,0.06); color: var(--danger); border: 1px solid rgba(255,34,85,0.2); }
+
+/* ── TOP STATS BAR ── */
+.top-stats {
+  display: grid; grid-template-columns: repeat(6, 1fr);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg1);
+  grid-column: 1 / -1;
+}
+.ts-cell {
+  padding: 12px 16px; border-right: 1px solid var(--border);
+  position: relative; overflow: hidden;
+}
+.ts-cell:last-child { border-right: none; }
+.ts-cell::after {
+  content: ''; position: absolute; bottom: 0; left: 0; right: 0;
+  height: 1px; background: var(--acid); opacity: 0;
+  transition: opacity 0.3s;
+}
+.ts-cell.updated::after { opacity: 1; animation: flash 0.5s; }
+@keyframes flash { 0%{opacity:1} 100%{opacity:0} }
+.ts-label { font-size: 8px; letter-spacing: 0.12em; color: var(--t2); font-family: var(--orb); margin-bottom: 4px; }
+.ts-val { font-family: var(--orb); font-size: 22px; font-weight: 900; line-height: 1; }
+.ts-sub { font-size: 9px; color: var(--t1); margin-top: 3px; }
+
+/* ── Modal for block detail ── */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(3,5,10,0.85);
+  backdrop-filter: blur(4px);
+  display: none; align-items: center; justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--bg1); border: 1px solid var(--border);
+  border-radius: 6px; padding: 24px; width: 500px;
+  max-height: 80vh; overflow-y: auto;
+  animation: modalIn 0.2s ease;
+  scrollbar-width: thin;
+}
+@keyframes modalIn { from{opacity:0;transform:scale(0.95)} to{opacity:1;transform:scale(1)} }
+.modal-title { font-family: var(--orb); font-size: 14px; letter-spacing: 0.1em; margin-bottom: 16px; color: var(--acid); display: flex; justify-content: space-between; }
+.modal-close { cursor: pointer; color: var(--t2); font-size: 18px; line-height: 1; }
+.modal-close:hover { color: var(--t0); }
+.modal-section { margin-bottom: 14px; }
+.modal-section-title { font-size: 8px; letter-spacing: 0.15em; color: var(--t2); font-family: var(--orb); margin-bottom: 8px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+.modal-kv { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.03); font-size: 11px; }
+.modal-kv .k { color: var(--t1); }
+.modal-kv .v { color: var(--t0); font-family: var(--mono); word-break: break-all; max-width: 300px; text-align: right; }
+.hash-full { font-size: 9px; color: var(--acid); word-break: break-all; padding: 6px; background: var(--bg3); border-radius: 3px; margin-top: 4px; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 2px; }
+
+/* Alert toast */
+.toast-container { position: fixed; top: 70px; right: 20px; z-index: 300; display: flex; flex-direction: column; gap: 8px; }
+.toast {
+  padding: 10px 16px; border-radius: 4px; font-size: 11px;
+  border: 1px solid; min-width: 260px;
+  animation: toastIn 0.3s ease;
+  font-family: var(--mono);
+}
+@keyframes toastIn { from{opacity:0;transform:translateX(20px)} to{opacity:1;transform:translateX(0)} }
+.toast.fraud { background: rgba(255,34,85,0.12); border-color: var(--danger); color: var(--danger); }
+.toast.clean { background: rgba(0,255,204,0.08); border-color: var(--acid); color: var(--acid); }
+
+/* Pulse animation for new fraud */
+@keyframes fraudPulse {
+  0%   { box-shadow: 0 0 0 0 rgba(255,34,85,0.4); }
+  70%  { box-shadow: 0 0 0 10px rgba(255,34,85,0); }
+  100% { box-shadow: 0 0 0 0 rgba(255,34,85,0); }
+}
+.fraud-pulse { animation: fraudPulse 0.6s ease; }
+</style>
+</head>
+<body>
+
+<div class="bg-grid"></div>
+<div class="bg-glow"></div>
+
+<!-- Toast container -->
+<div class="toast-container" id="toast-container"></div>
+
+<!-- Block detail modal -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
+  <div class="modal" id="modal-content">
+    <div class="modal-title">
+      <span>BLOCK DETAIL</span>
+      <span class="modal-close" onclick="document.getElementById('modal-overlay').classList.remove('open')">✕</span>
+    </div>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<header>
+  <div class="logo">SENTINEL</div>
+  <div class="header-center">
+    <div class="threat-level">
+      <span style="color:var(--t2);font-size:8px;letter-spacing:0.1em">THREAT</span>
+      <div class="threat-bar" id="threat-bar">
+        <div class="threat-seg" id="ts1"></div>
+        <div class="threat-seg" id="ts2"></div>
+        <div class="threat-seg" id="ts3"></div>
+        <div class="threat-seg" id="ts4"></div>
+        <div class="threat-seg" id="ts5"></div>
+      </div>
+      <span id="threat-label" style="color:var(--t1);font-size:9px;letter-spacing:0.08em">LOW</span>
+    </div>
+  </div>
+  <div class="header-right">
+    <span id="sys-time">--:--:--</span>
+    <div class="hchip live"><span class="live-dot"></span>LIVE</div>
+    <div class="hchip" id="conn-chip">OFFLINE</div>
+  </div>
+</header>
+
+<!-- Full width stats bar -->
+<div style="position:relative;z-index:1">
+<div class="top-stats">
+  <div class="ts-cell">
+    <div class="ts-label">TOTAL ANALYZED</div>
+    <div class="ts-val" id="st-total" style="color:var(--t0)">0</div>
+    <div class="ts-sub">transactions</div>
+  </div>
+  <div class="ts-cell">
+    <div class="ts-label">FRAUD DETECTED</div>
+    <div class="ts-val" id="st-fraud" style="color:var(--danger)">0</div>
+    <div class="ts-sub" id="st-rate">0.0% rate</div>
+  </div>
+  <div class="ts-cell">
+    <div class="ts-label">CLEARED</div>
+    <div class="ts-val" id="st-legit" style="color:var(--acid)">0</div>
+    <div class="ts-sub">legitimate</div>
+  </div>
+  <div class="ts-cell">
+    <div class="ts-label">BLOCKED VALUE</div>
+    <div class="ts-val" id="st-amount" style="color:var(--warn)">$0</div>
+    <div class="ts-sub">fraud amount</div>
+  </div>
+  <div class="ts-cell">
+    <div class="ts-label">CHAIN DEPTH</div>
+    <div class="ts-val" id="st-blocks" style="color:var(--info)">1</div>
+    <div class="ts-sub" id="st-valid" style="color:var(--acid)">✓ VALID</div>
+  </div>
+  <div class="ts-cell">
+    <div class="ts-label">MODEL AUC</div>
+    <div class="ts-val" id="st-auc" style="color:var(--purple)">—</div>
+    <div class="ts-sub">ROC score</div>
+  </div>
+</div>
+
+<!-- Three column layout -->
+<div class="sentinel-layout">
+
+  <!-- LEFT: Input + stats -->
+  <div class="left-panel">
+    <div class="panel-head">TRANSACTION <span>INPUT</span></div>
+    <div class="tx-form">
+      <div class="field">
+        <label class="field-label">Amount ($)</label>
+        <input type="number" id="f-amount" value="249.99" step="0.01" min="0.01"/>
+      </div>
+      <div class="field">
+        <label class="field-label">Hour of Day</label>
+        <input type="range" id="f-hour" min="0" max="23" value="14" oninput="document.getElementById('hour-val').textContent=this.value+':00'; updateRiskPreview()"/>
+        <div style="font-size:10px;color:var(--acid);margin-top:3px;text-align:right" id="hour-val">14:00</div>
+      </div>
+      <div class="field">
+        <label class="field-label">Merchant Category</label>
+        <select id="f-merchant" onchange="updateRiskPreview()">
+          <option value="grocery_store">🛒 Grocery Store</option>
+          <option value="gas_station">⛽ Gas Station</option>
+          <option value="restaurant">🍽 Restaurant</option>
+          <option value="online_retail" selected>🛍 Online Retail</option>
+          <option value="pharmacy">💊 Pharmacy</option>
+          <option value="hotel">🏨 Hotel</option>
+          <option value="electronics">💻 Electronics</option>
+          <option value="atm_withdrawal">🏧 ATM Withdrawal</option>
+          <option value="money_transfer">💸 Money Transfer</option>
+          <option value="casino">🎰 Casino</option>
+          <option value="crypto_exchange">₿ Crypto Exchange</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="field-label">Location</label>
+        <select id="f-location" onchange="updateRiskPreview()">
+          <option value="domestic" selected>🏠 Domestic</option>
+          <option value="foreign">✈️ Foreign</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="field-label">Velocity (txns/hr): <span id="vel-val" style="color:var(--acid)">1</span></label>
+        <input type="range" id="f-velocity" min="0" max="20" value="1" oninput="document.getElementById('vel-val').textContent=this.value; updateRiskPreview()"/>
+      </div>
+      <div class="field">
+        <label class="field-label">Card Present</label>
+        <select id="f-card" onchange="updateRiskPreview()">
+          <option value="1" selected>✅ Yes — Physical</option>
+          <option value="0">❌ No — Card Not Present</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="risk-preview">
+      <div class="rp-label">LIVE RISK ESTIMATE</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+        <span style="font-size:10px;color:var(--t1)" id="rp-label-text">Low Risk</span>
+        <span style="font-family:var(--orb);font-size:12px" id="rp-pct" style="color:var(--acid)">~12%</span>
+      </div>
+      <div class="rp-bar"><div class="rp-fill" id="rp-fill" style="width:12%"></div></div>
+    </div>
+
+    <!-- Last result -->
+    <div class="alert-result" id="alert-result">
+      <div class="ar-verdict" id="ar-verdict">—</div>
+      <div class="ar-grid">
+        <div class="ar-item"><div class="k">TX ID</div><div class="v" id="ar-txid">—</div></div>
+        <div class="ar-item"><div class="k">BLOCK</div><div class="v" id="ar-block">—</div></div>
+        <div class="ar-item"><div class="k">CONFIDENCE</div><div class="v" id="ar-conf">—</div></div>
+        <div class="ar-item"><div class="k">RISK LEVEL</div><div class="v" id="ar-risk">—</div></div>
+        <div class="ar-item"><div class="k">MINED IN</div><div class="v" id="ar-time">—</div></div>
+        <div class="ar-item"><div class="k">HASH</div><div class="v" id="ar-hash" style="font-size:9px">—</div></div>
+      </div>
+      <div class="conf-bar-wrap"><div class="conf-bar" id="ar-conf-bar" style="width:0%"></div></div>
+      <div class="ar-flags" id="ar-flags"></div>
+    </div>
+
+    <button class="submit-btn" id="submit-btn" onclick="submitTx()"><span>▶ ANALYZE & RECORD</span></button>
+    <button class="sim-btn" onclick="simulate()">⚡ Simulate 20 Transactions</button>
+
+    <div class="left-stats">
+      <div class="panel-head" style="padding:0 0 10px;margin-bottom:10px">MODEL <span>METRICS</span></div>
+      <div class="stat-item"><span class="si-label">AUC-ROC</span><span class="si-val" id="m-auc" style="color:var(--purple)">—</span></div>
+      <div class="stat-item"><span class="si-label">Recall</span><span class="si-val" id="m-recall" style="color:var(--acid)">—</span></div>
+      <div class="stat-item"><span class="si-label">Precision</span><span class="si-val" id="m-prec" style="color:var(--info)">—</span></div>
+      <div class="stat-item"><span class="si-label">F1 Score</span><span class="si-val" id="m-f1" style="color:var(--warn)">—</span></div>
+      <div class="stat-item"><span class="si-label">Threshold</span><span class="si-val" style="color:var(--t1)">0.35</span></div>
+    </div>
+  </div>
+
+  <!-- CENTER: Stream + charts -->
+  <div class="center-panel">
+    <div class="tx-stream">
+      <div class="stream-header">
+        <div class="stream-title">TRANSACTION STREAM</div>
+        <div class="stream-controls">
+          <button class="filter-btn active" onclick="setFilter('all',this)">ALL</button>
+          <button class="filter-btn" onclick="setFilter('fraud',this)">FRAUD</button>
+          <button class="filter-btn" onclick="setFilter('clean',this)">CLEAN</button>
+        </div>
+      </div>
+      <div class="tx-list" id="tx-list">
+        <div style="color:var(--t2);font-size:11px;padding:20px 0;text-align:center;font-family:var(--orb);letter-spacing:0.1em">
+          AWAITING TRANSACTIONS...
+        </div>
+      </div>
+    </div>
+
+    <div class="charts-row">
+      <div class="chart-cell">
+        <div class="chart-cell-title">FRAUD DISTRIBUTION</div>
+        <div class="chart-wrap"><canvas id="donut-chart"></canvas></div>
+      </div>
+      <div class="chart-cell">
+        <div class="chart-cell-title">TRANSACTION HISTORY</div>
+        <div class="chart-wrap"><canvas id="line-chart"></canvas></div>
+      </div>
+      <div class="chart-cell">
+        <div class="chart-cell-title">RISK SCORE DISTRIBUTION</div>
+        <div class="chart-wrap"><canvas id="bar-chart"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Blockchain -->
+  <div class="right-panel">
+    <div class="panel-head">BLOCKCHAIN <span>LEDGER</span></div>
+    <div class="chain-list" id="chain-list">
+      <div style="color:var(--t2);font-size:10px;padding:16px;font-family:var(--orb);letter-spacing:0.1em">LOADING CHAIN...</div>
+    </div>
+    <div class="chain-validator">
+      <button class="validate-btn" onclick="validateChain()">▶ VALIDATE CHAIN INTEGRITY</button>
+      <div class="validate-result" id="vr"></div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<script>
+const API = 'http://localhost:8001';
+let allTxs = [], currentFilter = 'all';
+let donutChart, lineChart, barChart;
+let lineData = [], riskBuckets = [0,0,0,0,0]; // 0-20,20-40,40-60,60-80,80-100
+
+const MERCHANT_ICONS = {
+  grocery_store:'🛒', gas_station:'⛽', restaurant:'🍽', online_retail:'🛍',
+  pharmacy:'💊', hotel:'🏨', electronics:'💻', atm_withdrawal:'🏧',
+  money_transfer:'💸', casino:'🎰', crypto_exchange:'₿'
+};
+const HIGH_RISK = new Set(['money_transfer','casino','crypto_exchange','atm_withdrawal']);
+
+// ── Charts ─────────────────────────────────────────────────────────────────
+
+function initCharts() {
+  Chart.defaults.color = '#2a4060';
+  Chart.defaults.borderColor = '#0f1830';
+  Chart.defaults.font.family = "'DM Mono', monospace";
+  Chart.defaults.font.size = 10;
+
+  // Donut
+  donutChart = new Chart(document.getElementById('donut-chart'), {
+    type: 'doughnut',
+    data: {
+      labels: ['Legitimate','Fraud'],
+      datasets: [{ data: [1,0], backgroundColor: ['rgba(0,255,204,0.6)','rgba(255,34,85,0.6)'], borderColor: ['#00ffcc','#ff2255'], borderWidth: 1 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '70%',
+      plugins: { legend: { position: 'bottom', labels: { color: '#5a7a9a', boxWidth: 10, font: { size: 9 } } }, tooltip: { enabled: true } },
+      animation: false,
+    }
+  });
+
+  // Line chart
+  lineChart = new Chart(document.getElementById('line-chart'), {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        { label: 'Amount', data: [], borderColor: '#0088ff', backgroundColor: 'rgba(0,136,255,0.05)', borderWidth: 1.5, fill: true, tension: 0.4, pointRadius: 0 },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend: { display: false }, tooltip: { enabled: false } },
+      scales: { x: { display: false }, y: { display: false } },
+    }
+  });
+
+  // Bar chart — risk distribution
+  barChart = new Chart(document.getElementById('bar-chart'), {
+    type: 'bar',
+    data: {
+      labels: ['0-20','20-40','40-60','60-80','80+'],
+      datasets: [{ data: [0,0,0,0,0], backgroundColor: ['rgba(0,255,204,0.6)','rgba(0,255,204,0.4)','rgba(255,170,0,0.5)','rgba(255,85,0,0.5)','rgba(255,34,85,0.7)'], borderWidth: 0, borderRadius: 2 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend: { display: false }, tooltip: { enabled: true } },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#2a4060', font: { size: 8 } } },
+        y: { display: false },
+      },
+    }
+  });
+}
+
+// ── Risk preview ────────────────────────────────────────────────────────────
+
+function updateRiskPreview() {
+  const amount   = parseFloat(document.getElementById('f-amount').value) || 0;
+  const hour     = parseInt(document.getElementById('f-hour').value);
+  const merchant = document.getElementById('f-merchant').value;
+  const location = document.getElementById('f-location').value;
+  const velocity = parseInt(document.getElementById('f-velocity').value);
+  const card     = parseInt(document.getElementById('f-card').value);
+
+  let risk = 5;
+  if (amount > 500) risk += 20;
+  if (amount > 1500) risk += 20;
+  if (hour >= 1 && hour <= 5) risk += 20;
+  if (HIGH_RISK.has(merchant)) risk += 20;
+  if (location === 'foreign') risk += 15;
+  if (velocity >= 5) risk += 15;
+  if (!card) risk += 10;
+  risk = Math.min(95, risk);
+
+  const fill = document.getElementById('rp-fill');
+  const pct  = document.getElementById('rp-pct');
+  const lbl  = document.getElementById('rp-label-text');
+  fill.style.width = risk + '%';
+  pct.textContent  = '~' + risk + '%';
+
+  if (risk < 30) { fill.style.background = '#00ffcc'; lbl.style.color = '#00ffcc'; lbl.textContent = 'Low Risk'; }
+  else if (risk < 60) { fill.style.background = '#ffaa00'; lbl.style.color = '#ffaa00'; lbl.textContent = 'Medium Risk'; }
+  else { fill.style.background = '#ff2255'; lbl.style.color = '#ff2255'; lbl.textContent = 'High Risk'; }
+}
+
+// ── Threat level ────────────────────────────────────────────────────────────
+
+function updateThreatLevel(fraudRate) {
+  const segs = document.querySelectorAll('.threat-seg');
+  const lbl  = document.getElementById('threat-label');
+  segs.forEach(s => s.className = 'threat-seg');
+
+  const active = Math.ceil((fraudRate / 100) * 5);
+  const cls = fraudRate < 20 ? 'active-low' : fraudRate < 50 ? 'active-medium' : 'active-high';
+  for (let i = 0; i < active; i++) segs[i].classList.add(cls);
+
+  lbl.textContent  = fraudRate < 20 ? 'LOW' : fraudRate < 50 ? 'MEDIUM' : 'HIGH';
+  lbl.style.color  = fraudRate < 20 ? 'var(--acid)' : fraudRate < 50 ? 'var(--warn)' : 'var(--danger)';
+}
+
+// ── Transaction stream ──────────────────────────────────────────────────────
+
+function setFilter(f, btn) {
+  currentFilter = f;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderTxList();
+}
+
+function renderTxList() {
+  const list = document.getElementById('tx-list');
+  const filtered = currentFilter === 'all' ? allTxs :
+    allTxs.filter(t => currentFilter === 'fraud' ? t.fraud : !t.fraud);
+
+  if (!filtered.length) {
+    list.innerHTML = `<div style="color:var(--t2);font-size:11px;padding:20px 0;text-align:center;font-family:var(--orb);letter-spacing:0.1em">NO TRANSACTIONS</div>`;
+    return;
+  }
+
+  list.innerHTML = filtered.slice(0, 30).map(t => {
+    const icon = MERCHANT_ICONS[t.merchant] || '💳';
+    return `<div class="tx-card ${t.fraud ? 'fraud' : ''} ${t.newBlock ? 'fraud-pulse' : ''}" onclick="showBlockModal(${t.blockIdx})">
+      <div class="tx-icon">${icon}</div>
+      <div class="tx-main">
+        <div class="tx-id">${t.txid}</div>
+        <div class="tx-merchant">${t.merchant.replace(/_/g,' ')}</div>
+      </div>
+      <div class="tx-amount" style="color:${t.fraud ? 'var(--danger)' : 'var(--t0)'}">$${t.amount}</div>
+      <div class="tx-block">#${t.blockIdx}</div>
+      <div class="tx-badge ${t.fraud ? 'fraud' : 'clean'}">${t.fraud ? 'FRAUD' : 'CLEAN'}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── Blockchain ledger ───────────────────────────────────────────────────────
+
+let chainData = [];
+
+function renderChain(chain) {
+  chainData = chain;
+  const list = document.getElementById('chain-list');
+  list.innerHTML = [...chain].reverse().map(b => {
+    const isG = b.index === 0;
+    const isF = b.fraud_result?.is_fraud;
+    const cls = isG ? 'genesis-block' : isF ? 'fraud-block' : 'clean-block';
+    const badgeCls = isG ? 'genesis' : isF ? 'fraud' : 'clean';
+    const badgeTxt = isG ? 'GENESIS' : isF ? 'FRAUD' : 'CLEAN';
+    const amount = b.transaction?.amount ? `$${b.transaction.amount}` : '';
+    const merchant = (b.transaction?.merchant_category || b.transaction?.message || '').replace(/_/g,' ');
+
+    return `<div class="block-item ${cls}" onclick="showBlockModal(${b.index})">
+      <div class="bi-top">
+        <span class="bi-idx">BLOCK #${b.index}</span>
+        <span class="bi-badge ${badgeCls}">${badgeTxt}</span>
+      </div>
+      <div class="bi-hash">${b.hash}</div>
+      <div class="bi-detail">
+        ${amount ? `<span class="bi-amount">${amount}</span> · ` : ''}${merchant}
+      </div>
+      <div class="bi-nonce">NONCE: ${b.nonce} · PREV: ${b.previous_hash.slice(0,12)}...</div>
+    </div>`;
+  }).join('');
+}
+
+// ── Block modal ─────────────────────────────────────────────────────────────
+
+function showBlockModal(idx) {
+  const block = chainData.find(b => b.index === idx);
+  if (!block) return;
+  const isFraud = block.fraud_result?.is_fraud;
+  const body = document.getElementById('modal-body');
+  body.innerHTML = `
+    <div class="modal-section">
+      <div class="modal-section-title">BLOCK HEADER</div>
+      <div class="modal-kv"><span class="k">Index</span><span class="v">${block.index}</span></div>
+      <div class="modal-kv"><span class="k">Timestamp</span><span class="v">${new Date(block.timestamp*1000).toLocaleString()}</span></div>
+      <div class="modal-kv"><span class="k">Nonce (PoW)</span><span class="v">${block.nonce}</span></div>
+      <div class="modal-kv"><span class="k">Previous Hash</span><span class="v" style="font-size:9px">${block.previous_hash.slice(0,32)}...</span></div>
+      <div class="modal-kv"><span class="k">Block Hash</span></div>
+      <div class="hash-full">${block.hash}</div>
+    </div>
+    <div class="modal-section">
+      <div class="modal-section-title">TRANSACTION DATA</div>
+      ${Object.entries(block.transaction).map(([k,v]) =>
+        `<div class="modal-kv"><span class="k">${k}</span><span class="v">${v}</span></div>`
+      ).join('')}
+    </div>
+    <div class="modal-section">
+      <div class="modal-section-title">ML VERDICT</div>
+      <div class="modal-kv"><span class="k">Is Fraud</span><span class="v" style="color:${isFraud?'var(--danger)':'var(--acid)'}">${isFraud ? '⚠ YES' : '✓ NO'}</span></div>
+      <div class="modal-kv"><span class="k">Confidence</span><span class="v">${((block.fraud_result?.confidence||0)*100).toFixed(1)}%</span></div>
+      <div class="modal-kv"><span class="k">Risk Score</span><span class="v">${block.fraud_result?.risk_score || 0}/100</span></div>
+      <div class="modal-kv"><span class="k">Risk Level</span><span class="v">${(block.fraud_result?.risk_level||'').toUpperCase()}</span></div>
+      ${(block.fraud_result?.flags||[]).map(f => `<div class="modal-kv"><span class="k">Flag</span><span class="v" style="color:var(--danger)">${f}</span></div>`).join('')}
+    </div>`;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function closeModal(e) {
+  if (e.target === document.getElementById('modal-overlay'))
+    document.getElementById('modal-overlay').classList.remove('open');
+}
+
+// ── Toast ───────────────────────────────────────────────────────────────────
+
+function showToast(msg, type) {
+  const c = document.getElementById('toast-container');
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.textContent = msg;
+  c.prepend(t);
+  setTimeout(() => t.remove(), 4000);
+}
+
+// ── Validate chain ──────────────────────────────────────────────────────────
+
+async function validateChain() {
+  const r = await fetch(API + '/api/blockchain/validate').then(r=>r.json()).catch(()=>null);
+  if (!r) return;
+  const el = document.getElementById('vr');
+  el.style.display = 'block';
+  el.className = `validate-result ${r.is_valid ? 'valid' : 'invalid'}`;
+  el.textContent = r.is_valid
+    ? `✓ ALL ${r.chain_length} BLOCKS VERIFIED — CHAIN INTACT`
+    : `✗ INTEGRITY VIOLATION: ${r.reason}`;
+}
+
+// ── Submit transaction ──────────────────────────────────────────────────────
+
+async function submitTx() {
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.querySelector('span').textContent = '◌ ANALYZING...';
+
+  const body = {
+    amount:                 parseFloat(document.getElementById('f-amount').value),
+    hour:                   parseInt(document.getElementById('f-hour').value),
+    day_of_week:            new Date().getDay(),
+    merchant_category:      document.getElementById('f-merchant').value,
+    location:               document.getElementById('f-location').value,
+    transactions_last_hour: parseInt(document.getElementById('f-velocity').value),
+    amount_deviation:       0,
+    card_present:           parseInt(document.getElementById('f-card').value),
+    is_recurring:           0,
+  };
+
+  try {
+    const d = await fetch(API+'/api/transaction/analyze', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)
+    }).then(r=>r.json());
+
+    showResult(d);
+    await refresh();
+    const isFraud = d.fraud_result.is_fraud;
+    showToast(
+      isFraud ? `⚠ FRAUD DETECTED — ${d.transaction_id} — $${body.amount}` : `✓ CLEARED — ${d.transaction_id} — $${body.amount}`,
+      isFraud ? 'fraud' : 'clean'
+    );
+  } catch(e) {
+    showToast('✗ Cannot reach backend on port 8001', 'fraud');
+  }
+
+  btn.disabled = false;
+  btn.querySelector('span').textContent = '▶ ANALYZE & RECORD';
+}
+
+function showResult(d) {
+  const isFraud = d.fraud_result.is_fraud;
+  const box = document.getElementById('alert-result');
+  box.style.display = 'block';
+  box.style.borderColor = isFraud ? 'rgba(255,34,85,0.4)' : 'rgba(0,255,204,0.3)';
+
+  const v = document.getElementById('ar-verdict');
+  v.textContent = isFraud ? '⚠ FRAUD DETECTED' : '✓ TRANSACTION CLEARED';
+  v.className = 'ar-verdict ' + (isFraud ? 'fraud' : 'clean');
+
+  document.getElementById('ar-txid').textContent  = d.transaction_id;
+  document.getElementById('ar-block').textContent = '#' + d.block_index;
+  document.getElementById('ar-conf').textContent  = (d.fraud_result.confidence*100).toFixed(1)+'%';
+  document.getElementById('ar-risk').textContent  = d.fraud_result.risk_level.toUpperCase();
+  document.getElementById('ar-time').textContent  = d.mined_in_ms + 'ms';
+  document.getElementById('ar-hash').textContent  = d.block_hash;
+
+  const bar = document.getElementById('ar-conf-bar');
+  bar.style.width = (d.fraud_result.confidence*100)+'%';
+  bar.style.background = isFraud ? 'var(--danger)' : 'var(--acid)';
+
+  document.getElementById('ar-flags').innerHTML =
+    (d.fraud_result.flags||[]).map(f=>`<span class="ar-flag">${f}</span>`).join('');
+}
+
+// ── Simulate ────────────────────────────────────────────────────────────────
+
+async function simulate() {
+  const btn = document.querySelector('.sim-btn');
+  btn.disabled = true; btn.textContent = '⏳ Simulating...';
+  try {
+    await fetch(API+'/api/simulate?count=20', {method:'POST'});
+    await refresh();
+    showToast('⚡ 20 transactions simulated', 'clean');
+  } catch(e) { showToast('✗ Cannot reach backend', 'fraud'); }
+  btn.disabled = false; btn.textContent = '⚡ Simulate 20 Transactions';
+}
+
+// ── Refresh ──────────────────────────────────────────────────────────────────
+
+async function refresh() {
+  try {
+    const [chain, metrics] = await Promise.all([
+      fetch(API+'/api/blockchain').then(r=>r.json()),
+      fetch(API+'/api/model/metrics').then(r=>r.json()),
+    ]);
+
+    // Stats
+    const s = chain.stats;
+    document.getElementById('st-total').textContent  = s.total_transactions;
+    document.getElementById('st-fraud').textContent  = s.total_fraud;
+    document.getElementById('st-legit').textContent  = s.total_legitimate;
+    document.getElementById('st-amount').textContent = '$'+s.fraud_amount.toLocaleString();
+    document.getElementById('st-blocks').textContent = s.chain_length;
+    document.getElementById('st-rate').textContent   = s.fraud_rate+'% rate';
+    document.getElementById('st-valid').textContent  = s.chain_valid ? '✓ VALID' : '✗ INVALID';
+    document.getElementById('st-valid').style.color  = s.chain_valid ? 'var(--acid)' : 'var(--danger)';
+    document.getElementById('st-auc').textContent    = metrics.auc_roc || '—';
+
+    // Model metrics
+    document.getElementById('m-auc').textContent    = metrics.auc_roc   || '—';
+    document.getElementById('m-recall').textContent = metrics.recall    || '—';
+    document.getElementById('m-prec').textContent   = metrics.precision || '—';
+    document.getElementById('m-f1').textContent     = metrics.f1_score  || '—';
+
+    // Threat level
+    updateThreatLevel(s.fraud_rate);
+
+    // Rebuild tx list
+    allTxs = chain.chain.slice(1).reverse().map(b => ({
+      txid:     b.transaction?.transaction_id || 'GENESIS',
+      merchant: b.transaction?.merchant_category || '',
+      amount:   b.transaction?.amount || 0,
+      fraud:    b.fraud_result?.is_fraud || false,
+      blockIdx: b.index,
+      conf:     b.fraud_result?.confidence || 0,
+      newBlock: false,
+    }));
+    renderTxList();
+    renderChain(chain.chain);
+
+    // Update charts
+    donutChart.data.datasets[0].data = [s.total_legitimate||1, s.total_fraud];
+    donutChart.update();
+
+    // Line chart — last 30 amounts
+    const amounts = chain.chain.slice(1).slice(-30).map(b => b.transaction?.amount || 0);
+    lineChart.data.labels = amounts.map((_,i) => i);
+    lineChart.data.datasets[0].data = amounts;
+    lineChart.update();
+
+    // Bar chart — risk distribution
+    riskBuckets = [0,0,0,0,0];
+    chain.chain.slice(1).forEach(b => {
+      const score = b.fraud_result?.risk_score || 0;
+      const idx = Math.min(4, Math.floor(score / 20));
+      riskBuckets[idx]++;
+    });
+    barChart.data.datasets[0].data = riskBuckets;
+    barChart.update();
+
+  } catch(e) {
+    document.getElementById('conn-chip').textContent = 'OFFLINE';
+    document.getElementById('conn-chip').style.borderColor = 'var(--danger)';
+    document.getElementById('conn-chip').style.color = 'var(--danger)';
+  }
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+async function init() {
+  initCharts();
+  updateRiskPreview();
+  setInterval(() => {
+    document.getElementById('sys-time').textContent = new Date().toTimeString().slice(0,8);
+  }, 1000);
+
+  try {
+    await fetch(API+'/api/health');
+    document.getElementById('conn-chip').textContent = 'ONLINE';
+    document.getElementById('conn-chip').style.borderColor = 'var(--acid)';
+    document.getElementById('conn-chip').style.color = 'var(--acid)';
+    await refresh();
+  } catch(e) {
+    document.getElementById('conn-chip').textContent = 'OFFLINE';
+  }
+
+  setInterval(refresh, 6000);
+}
+
+init();
+</script>
+</body>
+</html>
